@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Connichiwa Example Application</title>
+
+		<meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<script src="/connichiwa-scripts/gyro.min.js"></script>
+		<script src="/connichiwa-scripts/jquery.js"></script>
+    <script src="/connichiwa/connichiwa.js"></script>
+	</head>
+	<body>
+    <h1>Connichiwa is running!</h1><br/>
+    <div id="devices"></div>
+
+    <script>
+      var devices = 0;
+
+      function updateDevices() {
+        var plural = (devices === 1) ? '' : 's';
+        $("#devices").text(devices+" device"+plural+" nearby.");
+      }
+      
+      Connichiwa.on("deviceDetected", function() {
+        devices++;
+        updateDevices();
+      });
+
+      Connichiwa.on("deviceLost", function() {
+        devices--;
+        updateDevices();
+      });
+
+      updateDevices();
+    </script>
+	</body>
+</html>
+
