@@ -19,7 +19,9 @@
     [super viewDidLoad];
     
     AppDelegate *appDelegate = (AppDelegate *)[[UIApplication sharedApplication] delegate];
+    
     NSString *documentRoot = [[NSBundle mainBundle] bundlePath];
+    documentRoot = [documentRoot stringByAppendingPathComponent:@"/www"];
     
     CWWebApplication *webApp = [appDelegate webApp];
     [webApp setRemoteWebView:self.remoteWebView];
