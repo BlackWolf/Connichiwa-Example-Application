@@ -204,6 +204,7 @@ var OOP = (function() {
     extendSingleton : extendSingleton
   };
 })();  
+/* global OOP */
 "use strict";
 
 
@@ -213,43 +214,42 @@ var OOP = (function() {
  *
  * @namespace CWDebug
  */
-var CWDebug = (function()
-{
-  /**
-   * true if debug mode is on, otherwise false
-   */
-  var debug = true;
+var CWDebug = OOP.createSingleton("Connichiwa", "CWDebug", {
+  _debug: false,
+  _logLevel: 0,
 
-  var enableDebug = function() {
-    debug = true;
-  };
+  "public setDebug": function(v) {
+    this._debug = v;
+  },
+
+  "public setLogLevel": function(v) {
+    this._logLevel = v;
+  },
 
 
-  var disableDebug = function() {
-    debug = false;
-  };
+  "public setDebugInfo": function(info) {
+    if (info.debug)    CWDebug.setDebug(info.debug);
+    if (info.logLevel) CWDebug.setLogLevel(info.logLevel);
+  },
 
-  /**
-   * Logs a message to the console if debug mode is on
-   *
-   * @param {int} priority The priority of the message. Messages with lower priority are printed at lower debug states.
-   * @param {string} message the message to log
-   *
-   * @memberof CWDebug
-   */
-  var log = function(priority, message)
-  {
-    // if (priority > 3) return;
-    if (debug) console.log(priority + "|" + message);
-  };
 
-  return {
-    enableDebug  : enableDebug,
-    disableDebug : disableDebug,
-    log          : log
-  };
-})();
-/* global Connichiwa, CWSystemInfo, CWUtil, CWEventManager, CWDebug */
+  "public getDebugInfo": function() {
+    return { debug: this._debug, logLevel: this._logLevel };
+  },
+
+
+  "public log": function(level, msg) {
+    if (this._debug && level <= this._logLevel) {
+      console.log(level + "|" + msg);
+    }
+  },
+
+  "public err": function(msg) {
+    if (this._debug) {
+      console.log("ERROR" + "|" + msg);
+    }
+  }
+});/* global Connichiwa, CWSystemInfo, CWUtil, CWEventManager, CWDebug */
 /* global nativeCallConnectRemote */
 "use strict";
 
@@ -286,16 +286,14 @@ function CWDevice(properties)
   var _launchDate = Date.now() / 1000.0;
   var _ips = [];
   var _port = undefined;
-  var _name = "unknown";
+  var _name = "remote device";
   var _ppi = CWSystemInfo.DEFAULT_PPI();
-  var _isLocal = false; 
 
   if (properties.launchDate) _launchDate = properties.launchDate;
   if (properties.ips) _ips = properties.ips;
   if (properties.port) _port = properties.port;
   if (properties.name) _name = properties.name;
   if (properties.ppi && properties.ppi > 0) _ppi = properties.ppi;
-  if (properties.isLocal) _isLocal = properties.isLocal;
   
   /**
    * Returns the identifier of this device
@@ -318,7 +316,7 @@ function CWDevice(properties)
   this.getPPI = function() { return _ppi; };
 
   this.isLocal = function() {
-    return this._isLocal;
+    return this.equalTo(Connichiwa.getLocalDevice());
   };
   
   this.isNearby = function()
@@ -484,27 +482,38 @@ var CWEventManager = (function()
     trigger  : trigger
   };
 })();
-/* global CWEventManager, CWVector, CWDebug, Connichiwa, CWUtil */
+/* global OOP, CWEventManager, CWVector, CWDebug, Connichiwa, CWUtil */
 "use strict";
 
 
-$(document).ready(function() {
-  var touchStart;
-  var touchLast;
-  var touchLastVector;
-  var touchCheckable = false;
-  var touchAngleReferenceVector;
-  var touchAngleChangedCount = 0;
-  $("body").on("mousedown touchstart", function(e) {
-    touchStart = CWUtil.getEventLocation(e, "client");
-  });
 
-  $("body").on("mousemove touchmove", function(e) {
-    if (touchStart === undefined) return;
+var CWGestures = OOP.createSingleton("Connichiwa", "CWGestures", {
+  "private _touchStart": undefined,
+  "private _touchLast": undefined,
+  "private _touchLastVector": undefined,
+  "private _touchCheckable": false,
+  "private _touchAngleReferenceVector": undefined,
+  "private _touchAngleChangedCount": 0,
+
+  __constructor: function() {
+    var that = this;
+    $(document).ready(function() {
+      that.captureOn($("body"));
+    });
+  },
+
+
+  "private _onDown": function(e) {
+    this._touchStart = CWUtil.getEventLocation(e, "client");
+  },
+
+
+  "private _onMove": function(e) {
+    if (this._touchStart === undefined) return;
 
     var newTouch = CWUtil.getEventLocation(e, "client");
 
-    //In touchend, we only compare touchStart to touchLast, so it is possible that
+    //In touchend, we only compare this._touchStart to this._touchLast, so it is possible that
     //the user starts swiping, then goes in the opposite direction and then in the
     //first direction again, which would be detected as a valid swipe.
     //To prevent this, we try to detect direction changes here by checking the angle
@@ -513,67 +522,68 @@ $(document).ready(function() {
     //Unfortunately, touches can "jitter", so we need to make sure that
     //small (or very short) angle changes don't cancel the swipe. Because of this,
     //once we detect a direction change we save the last "valid" finger vector into
-    //touchAngleReferenceVector. We then compare the following vectors to that 
+    //this._touchAngleReferenceVector. We then compare the following vectors to that 
     //reference vector. Only if 3 touches in a row have a direction change, we cancel
     //the swipe.
     //
     //Furthermore, we add some noise reduction by making sure the last finger vector
     //has a minimum length of 2 and the entire swipe is at least 5 pixels in length
-    if (touchLast !== undefined) {
-      var totalTouchVector = new CWVector(touchStart, newTouch);
-      var newTouchVector   = new CWVector(touchLast, newTouch);
+    if (this._touchLast !== undefined) {
+      var totalTouchVector = new CWVector(this._touchStart, newTouch);
+      var newTouchVector   = new CWVector(this._touchLast,  newTouch);
 
-      var touchCheckable = (touchCheckable || totalTouchVector.length() > 5);
-      if (touchCheckable && newTouchVector.length() > 1) {
+      this._touchCheckable = (this._touchCheckable || totalTouchVector.length() > 5);
+      if (this._touchCheckable && newTouchVector.length() > 1) {
 
         //A previous touch was a direction change, compare with the saved
         //reference vector by calculating their angle
-        if (touchAngleReferenceVector !== undefined) {
-          var referenceTouchAngle = newTouchVector.angle(touchAngleReferenceVector);
+        if (this._touchAngleReferenceVector !== undefined) {
+          var referenceTouchAngle = newTouchVector.angle(this._touchAngleReferenceVector);
           if (referenceTouchAngle > 20) {
           // if (referenceTouchAngle > 30) {
-            touchAngleChangedCount++;
+            this._touchAngleChangedCount++;
 
-            if (touchAngleChangedCount === 3) {
-              touchStart = undefined;
-              touchLast  = undefined;
+            if (this._touchAngleChangedCount === 3) {
+              this._touchStart = undefined;
+              this._touchLast  = undefined;
               return;
             }
           } else {
-            touchAngleReferenceVector = undefined;
-            touchAngleChangedCount = 0;
+            this._touchAngleReferenceVector = undefined;
+            this._touchAngleChangedCount = 0;
           }
 
         //Compare the current finger vector to the last finger vector and see
         //if the direction has changed by calculating their angle
         } else {
-          if (touchLastVector !== undefined) {
-            var newTouchAngle = newTouchVector.angle(touchLastVector);
+          if (this._touchLastVector !== undefined) {
+            var newTouchAngle = newTouchVector.angle(this._touchLastVector);
             if (newTouchAngle > 20) {
             // if (newTouchAngle > 30) {
-              touchAngleReferenceVector = touchLastVector;
-              touchAngleChangedCount = 1;
+              this._touchAngleReferenceVector = this._touchLastVector;
+              this._touchAngleChangedCount = 1;
             }
           }
         }
       }
 
-      if (newTouchVector.length() > 0) touchLastVector = newTouchVector;
+      if (newTouchVector.length() > 0) this._touchLastVector = newTouchVector;
     } 
 
-    touchLast = newTouch;
-  });
+    this._touchLast = newTouch;
+  },
 
-  $("body").on("mouseup touchend", function(e) {
-    var swipeStart = touchStart;
-    var swipeEnd   = touchLast;
 
-    touchStart                = undefined;
-    touchLast                 = undefined;
-    touchLastVector           = undefined;
-    touchCheckable            = false;
-    touchAngleReferenceVector = undefined;
-    touchAngleChangedCount    = 0;
+  "private _onUp": function(e) {
+    var swipeStart = this._touchStart;
+    var swipeEnd   = this._touchLast;
+
+    this._touchStart                = undefined;
+    this._touchLast                 = undefined;
+    this._touchLastVector           = undefined;
+    this._touchCheckable            = false;
+    this._touchAngleReferenceVector = undefined;
+    this._touchAngleChangedCount    = 0;
 
     if (swipeStart === undefined || swipeEnd === undefined) return;
 
@@ -653,7 +663,24 @@ $(document).ready(function() {
       y    : swipeEnd.y
     };
     CWEventManager.trigger("stitchswipe", swipeData);
-  });
+  },
+
+
+  "public captureOn": function(el) {
+    if (el instanceof jQuery) el = el.get(0);
+
+    //el.on("mousedown this._touchStart", this._onDown);
+    el.addEventListener("mousedown",  this._onDown, true);
+    el.addEventListener("touchstart", this._onDown, true);
+
+    //el.on("mousemove touchmove", this._onMove);
+    el.addEventListener("mousemove", this._onMove, true);
+    el.addEventListener("touchmove", this._onMove, true);
+
+    //el.on("mouseup touchend", this._onUp);
+    el.addEventListener("mouseup",  this._onUp, true);
+    el.addEventListener("touchend", this._onUp, true);
+  }
 });
 /* global OOP, gyro, CWEventManager, CWDebug */
 "use strict";
@@ -662,6 +689,7 @@ $(document).ready(function() {
 
 var CWGyroscope = OOP.createSingleton("Connichiwa", "CWGyroscope", {
   _lastMeasure: undefined,
+  _alphaGammaFlipped: false,
 
   __constructor: function() {
   gyro.frequency = 500;
@@ -677,15 +705,34 @@ var CWGyroscope = OOP.createSingleton("Connichiwa", "CWGyroscope", {
       o.x === null || o.y === null || o.z === null) return;
 
     if (this._lastMeasure === undefined) this._lastMeasure = o;
+
+    // GYROSCOPE
+
+    //Fuck you Microsoft
+    //On "some devices" (so far on Surface Pro 2) the alpha and gamma
+    //values are flipped for no reason. There is no good way to detect this,
+    //only if alpha or gamma are out of their range we know this is the case
+    if (o.alpha < 0 || o.gamma > 180) {
+      this._alphaGammaFlipped = true;
+
+      //Flip last measure so we don't screw up our delta calculations
+      var temp = this._lastMeasure.alpha;
+      this._lastMeasure.alpha = this._lastMeasure.gamma;
+      this._lastMeasure.gamma - temp;
+    }
     
-    //Send gyro update
-    var deltaAlpha = o.alpha - this._lastMeasure.alpha;
-    var deltaBeta  = o.beta  - this._lastMeasure.beta;
-    var deltaGamma = o.gamma - this._lastMeasure.gamma;
+    var alpha = this._alphaGammaFlipped ? o.gamma : o.alpha;
+    var beta  = o.beta;
+    var gamma = this._alphaGammaFlipped ? o.alpha : o.gamma;
+
+    var deltaAlpha = alpha - this._lastMeasure.alpha;
+    var deltaBeta  = beta  - this._lastMeasure.beta;
+    var deltaGamma = gamma - this._lastMeasure.gamma;
+
     var gyroData = { 
-      alpha : o.alpha, 
-      beta  : o.beta, 
-      gamma : o.gamma,
+      alpha : alpha, 
+      beta  : beta, 
+      gamma : gamma,
       delta : {
         alpha : deltaAlpha, 
         beta  : deltaBeta, 
@@ -694,7 +741,8 @@ var CWGyroscope = OOP.createSingleton("Connichiwa", "CWGyroscope", {
     };
     CWEventManager.trigger(5, "gyroscopeUpdate", gyroData);
 
-    //Send accelerometer update
+    // ACCELEROMETER
+
     var deltaX = o.x - this._lastMeasure.x;
     var deltaY = o.y - this._lastMeasure.y;
     var deltaZ = o.z - this._lastMeasure.z;
@@ -711,7 +759,7 @@ var CWGyroscope = OOP.createSingleton("Connichiwa", "CWGyroscope", {
     CWEventManager.trigger(5, "accelerometerUpdate", accelData);
 
     //We need to copy the values of o because o will be altered by gyro
-    this._lastMeasure = { x: o.x, y: o.y, z: o.z, alpha: o.alpha, beta: o.beta, gamma: o.gamma };
+    this._lastMeasure = { x: o.x, y: o.y, z: o.z, alpha: alpha, beta: beta, gamma: gamma };
   },
 
 
@@ -1245,10 +1293,12 @@ var CWUtil = (function()
   {
     if (type === undefined) type = "page";
 
-    var pos = { x: e[type+"X"], y: e[type+"Y"] };
+    var seen = [];
+    var pos = { x: e[type + "X"], y: e[type + "Y"] };
     if (pos.x === undefined || pos.y === undefined)
     {
-      pos = { x: e.originalEvent.targetTouches[0][type+"X"], y: e.originalEvent.targetTouches[0][type+"Y"] };
+      var touches = (e.originalEvent === undefined) ? e.targetTouches : e.originalEvent.targetTouches;
+      pos = { x: touches[0][type + "X"], y: touches[0][type + "Y"] };
     }
 
     return pos;
@@ -1365,8 +1415,11 @@ CWVector.prototype.angle = function(otherVector) {
 
 var CWWebsocketMessageParser = OOP.createSingleton("Connichiwa", "CWWebsocketMessageParser", 
 {
+  _chunkedMessages: {},
+
   "package parse": function(message) {
     switch (message._name) {
+      case "_chunk"             : this._parseChunk(message);             break;
       case "_ack"               : this._parseAck(message);               break;
       case "_insert"            : this._parseInsert(message);            break;
       case "_replace"           : this._parseReplace(message);           break;
@@ -1375,6 +1428,26 @@ var CWWebsocketMessageParser = OOP.createSingleton("Connichiwa", "CWWebsocketMes
       case "_wasstitched"       : this._parseWasStitched(message);       break;
       case "_wasunstitched"     : this._parseWasUnstitched(message);     break;
       case "_gotstitchneighbor" : this._parseGotStitchNeighbor(message); break;
+    }
+
+    return true;
+  },
+
+
+  _parseChunk: function(message) {
+    CWDebug.log(1, "RECEIVED CHUNK! SIZE: "+message.payload.length)
+    var key = message.originalID;
+    if ((key in this._chunkedMessages) === false) {
+      this._chunkedMessages[key] = "";
+    }
+
+    this._chunkedMessages[key] += message.payload;
+
+    if (message.isFinal) {
+      CWDebug.log(1, "ASSEMBLED MESSAGE");
+      CWDebug.log(1, this._chunkedMessages[key]);
+      this.parse(JSON.parse(this._chunkedMessages[key]));
+      delete this._chunkedMessages[key];
     }
   },
 
@@ -1401,7 +1474,7 @@ var CWWebsocketMessageParser = OOP.createSingleton("Connichiwa", "CWWebsocketMes
     $.getScript(message.url).done(function() {
       that.package.Connichiwa._sendAck(message);
     }).fail(function(f, s, t) {
-      CWDebug.log(1, "There was an error loading '" + message.url + "': " + t);
+      CWDebug.err(1, "There was an error loading '" + message.url + "': " + t);
     });
   },
 
@@ -1437,8 +1510,9 @@ var Connichiwa = OOP.createSingleton("Connichiwa", "Connichiwa", {
   "private _websocket" : undefined,
 
 
-  "public getIdentifier" : function() { /* ABSTRACT */ },
-  "public isMaster"      : function() { /* ABSTRACT */ },
+  "public getLocalDevice" : function() { /* ABSTRACT */ },
+  "public getIdentifier"  : function() { /* ABSTRACT */ },
+  "public isMaster"       : function() { /* ABSTRACT */ },
 
 
   "public on": function(eventName, callback) {
@@ -1460,7 +1534,9 @@ var Connichiwa = OOP.createSingleton("Connichiwa", "Connichiwa", {
 
   "public onLoad": function(callback) {
     if (document.readyState === "complete") {
-      callback();
+      //Timeout so we finish whatever we do right now
+      //before calling the ready callback
+      window.setTimeout(callback, 0);
     } else {
       Connichiwa.on("ready", callback);
     }
@@ -1603,11 +1679,14 @@ var Connichiwa = OOP.createSingleton("Connichiwa", "Connichiwa", {
 
   "public broadcast": function(name, message, sendToSelf) 
   {
-    this.send("broadcast", name, message);
-
-    if (sendToSelf === true) {
-      this.send(this.getIdentifier(), name, message);
+    if (sendToSelf) {
+      message._broadcastToSource = true;
     }
+    
+    this.send("broadcast", name, message);
+    // if (sendToSelf === true) {
+      // this.send(this.getIdentifier(), name, message);
+    // }
   },
 
 
@@ -1620,19 +1699,61 @@ var Connichiwa = OOP.createSingleton("Connichiwa", "Connichiwa", {
   "package _sendObject": function(message)
   {
     if (("_name" in message) === false) {
-      console.warn("Tried to send message without _name, ignoring: "+JSON.stringify(message));
+      CWDebug.err("Tried to send message without _name, ignoring: "+JSON.stringify(message));
       return;
     }
 
-    message._id = CWUtil.randomInt();
+    message._id = CWUtil.randomInt(0, 9999999999); 
     message._name = message._name.toLowerCase();
 
     var messageString = JSON.stringify(message);
     CWDebug.log(4, "Sending message: " + messageString);
-    this._websocket.send(messageString);
+
+    //If the message is too long, chunk it in pieces of 2^15 bytes
+    //We need to do that because some browser (Safari *cough*) can't
+    //really handle messages that are very large.
+    //We chunk the messages by framing the message with another message
+    // if (messageString.length > 32700) {
+    //   var pos = 0;
+    //   while (pos < messageString.length) { 
+    //     var chunkMessage = {
+    //       _id        : CWUtil.randomInt(0, 9999999999),
+    //       _name      : "_chunk",
+    //       _source    : message._source,
+    //       _target    : message._target,
+    //       originalID : message._id,
+    //       payload    : "",
+    //       isFinal    : 0,
+    //     };
+    //     chunkMessage.payload = messageString.substr(pos, 32700);
+
+    //     var length = JSON.stringify(chunkMessage).length;
+    //     var overload = 0;
+    //     if (length > 32700) {
+    //       overload = length - 32700;
+    //       chunkMessage.payload = chunkMessage.payload.substr(0, 32700-overload);
+    //     }
+    //     chunkMessage.isFinal = (pos+(32700 - overload)>=messageString.length) ? 1 : 0;
+
+    //     CWDebug.log(1, "Sending chunk of size "+JSON.stringify(chunkMessage).length);
+    //     //Once again, we need a setTimeout to lower the possibility of a crash on iOS
+    //     window.setTimeout(function() { this._websocket.send(JSON.stringify(message)); }.bind(this), 0);
+
+    //     pos += 32700 - overload;
+    //     CWDebug.log(1, "Pos is now "+pos+"/"+messageString.length);
+    //   }
+    // } else {
+      //Once again, we need a setTimeout to lower the possibility of a crash on iOS
+      this._websocket.send(messageString);
+    // }
 
     return message._id;
   },
+
+
+  // "private _sendChunk": function(chunk) {
+
+  // },
 
 
   "package _disconnectWebsocket": function()
@@ -1856,7 +1977,7 @@ var CWNativeMasterCommunication = OOP.createSingleton("Connichiwa", "CWNativeMas
     var object = JSON.parse(message);
     switch (object._name)
     {
-      case "cwdebug":               this._parseDebug(object); break;
+      case "debuginfo":             this._parseDebugInfo(object); break;
       case "connectwebsocket":      this._parseConnectWebsocket(object); break;
       case "localinfo":             this._parseLocalInfo(object); break;
       case "devicedetected":        this._parseDeviceDetected(object); break;
@@ -1869,10 +1990,9 @@ var CWNativeMasterCommunication = OOP.createSingleton("Connichiwa", "CWNativeMas
   },
 
 
-  _parseDebug: function(message)
+  _parseDebugInfo: function(message)
   {
-    if (message.cwdebug === true) CWDebug.enableDebug();
-    else CWDebug.disableDebug();
+    CWDebug.setDebugInfo(message);
   },
   
   
@@ -2363,7 +2483,7 @@ OOP.extendSingleton("Connichiwa", "CWWebsocketMessageParser",
 {
   "package parseOnMaster": function(message) {
     switch (message._name) {
-      case "_remoteinfo"   :  this._parseRemoteInfo(message);  break;
+      case "remoteinfo"   :  this._parseRemoteInfo(message);  break;
       case "_stitchswipe" :  this._parseStitchSwipe(message); break;
       case "_quitstitch"  :  this._parseQuitStitch(message);  break;
     }
@@ -2389,11 +2509,14 @@ OOP.extendSingleton("Connichiwa", "CWWebsocketMessageParser",
     
     device.connectionState = CWDeviceConnectionState.CONNECTED;
     nativeCallRemoteDidConnect(device.getIdentifier());
+
+    //Make sure the remote uses the same logging settings as we do
+    device.send("_debuginfo", CWDebug.getDebugInfo());
     
+    // AutoLoad files from Connichiwa.autoLoad on the new remote device
     var didConnectCallback = function() { 
       CWEventManager.trigger("deviceConnected", device); 
     };
-
     var loadOtherFile = function(device, file) {
       //As of now, "other" files are only CSS
       var extension = file.split(".").pop().toLowerCase();
@@ -2462,6 +2585,11 @@ OOP.extendSingleton("Connichiwa", "Connichiwa", {
   // PUBLIC API
   
 
+  "public getLocalDevice": function() {
+    return CWDeviceManager.getLocalDevice();
+  },
+  
+
   "public getIdentifier": function() 
   {
     var localDevice = CWDeviceManager.getLocalDevice();
@@ -2525,6 +2653,15 @@ OOP.extendSingleton("Connichiwa", "Connichiwa", {
   _onWebsocketMessage: function(e)
   {
     var message = JSON.parse(e.data);
+
+    //Filter messages that were broadcasted by us and do not have the
+    //"_broadcastToSource" flag set
+    if (message._target === "broadcast" && 
+      message._source === this.getLocalDevice().getIdentifier() && 
+      message._broadcastToSource !== true) {
+      return;
+    }
+
     CWDebug.log(4, "Received message: " + e.data);
     
     //It seems that reacting immediatly to a websocket message
@@ -2540,9 +2677,11 @@ OOP.extendSingleton("Connichiwa", "Connichiwa", {
   },
 
 
-  _onWebsocketClose: function()
+  _onWebsocketClose: function(e)
   {
     CWDebug.log(3, "Websocket closed");
+    CWDebug.log(3, e.code);
+    CWDebug.log(3, e.reason);
     this._cleanupWebsocket();
 
     if (this._connectionAttempts >= 5)
@@ -2553,7 +2692,7 @@ OOP.extendSingleton("Connichiwa", "Connichiwa", {
     }
 
     //We can't allow this blashphemy! Try to reconnect!
-    setTimeout(function() { this._connectWebsocket(); }, this._connectionAttempts * 1000);
+    // setTimeout(function() { this._connectWebsocket(); }.bind(this), this._connectionAttempts * 1000);
   },
 
 
