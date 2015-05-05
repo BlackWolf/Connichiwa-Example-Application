@@ -8,6 +8,10 @@
 
 #import "AppDelegate.h"
 
+
+static int LOG_LEVEL = 1;
+
+
 @interface AppDelegate ()
 
 @property (strong, readwrite) CWWebApplication *webApp;
@@ -20,6 +24,8 @@
 
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    [CWWebApplication setLogLevel:LOG_LEVEL];
+    
     self.webApp = [[CWWebApplication alloc] init];
     
     // Override point for customization after application launch.
