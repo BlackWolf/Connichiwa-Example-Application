@@ -9,7 +9,7 @@
 #import "AppDelegate.h"
 
 
-static int LOG_LEVEL = 1;
+static int LOG_LEVEL = 5;
 
 
 @interface AppDelegate ()
