@@ -2,7 +2,7 @@
 Connichiwa.onLoad(function() {
   //Get our master template and insert it into the body
   CWTemplates.load("template_master.html");
-  CWTemplates.insert("master", "body");
+  CWTemplates.insert("master", { target: "body" });
 
   //Set the initial template data
   setDetectedDevices(0);
@@ -40,7 +40,10 @@ Connichiwa.onLoad(function() {
     //use this name to determine which devices UI is updated
     device.loadCSS("styles.css");
     device.loadTemplates("template_remote.html");
-    device.insertTemplate("remote", "body", device.getIdentifier());
+    device.insertTemplate("remote", { 
+      target: "body", 
+      dataSource: device.getIdentifier() 
+    });
     updateRemoteDistance(device);
   });
 
